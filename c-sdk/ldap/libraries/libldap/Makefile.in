@@ -40,6 +40,7 @@ MOD_DEPTH 	= ../../..
 srcdir		= @srcdir@
 topsrcdir	= @top_srcdir@
 SASL_CFLAGS     = @SASL_CFLAGS@
+SASL_LIBS       = @SASL_LIBS@
 HAVE_SASL	= @HAVE_SASL@
 
 include $(MOD_DEPTH)/config/autoconf.mk
@@ -202,7 +203,7 @@ EXTRA_LIBS = -L$(dist_libdir) -l$(LBER_LIBNAME) $(OS_LIBS) -lc
 endif
 
 ifeq ($(OS_ARCH), Linux)
-EXTRA_LIBS = -L$(dist_libdir) -l$(LBER_LIBNAME) $(SASL_LINK)
+EXTRA_LIBS = -L$(dist_libdir) -l$(LBER_LIBNAME)
 endif
 
 ifeq ($(OS_ARCH), WINNT)
@@ -264,6 +265,10 @@ endif
 
 ifeq ($(OS_ARCH), OpenBSD)
 EXTRA_LIBS = -L$(dist_libdir) -l$(LBER_LIBNAME) -pthread
+endif
+
+ifeq ($(HAVE_SASL), 1)
+EXTRA_LIBS += $(SASL_LINK)
 endif
 
 ###########################################################################
