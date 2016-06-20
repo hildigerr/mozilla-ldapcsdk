@@ -18,6 +18,7 @@
 #   MOZ_DEBUG   if defined, you are building debug
 #   MOZ_BITS    set to 16 to build Win16, defaults to Win32.
 #   MOZ_SEC     set to DOMESTIC for 128 US, defaults to EXPORT.
+#   MOZ_TOOLS   place holding the build tools (e.g. makedep.exe)
 #   LINK_SEC    if defined and pointing to a directory containing libsec &
 #               friends, then link them in. Default not set.
 #
@@ -50,6 +51,10 @@ MOZ_SRC=y:
 
 !if !defined(MOZ_BITS)
 MOZ_BITS=32
+!endif
+
+!if !defined(MOZ_LDAP_VER)
+MOZ_LDAP_VER=30
 !endif
 
 !if !defined(LDAP_SRC)
@@ -194,7 +199,7 @@ SECMODEL=\none
 
 
 # Static library name
-STATICLIB=$(OUTDIR)\nsldaps$(DLL_BITS).lib
+STATICLIB=$(OUTDIR)\nsldaps$(DLL_BITS)v$(MOZ_LDAP_VER).lib
 
 # Get C runtime library version info right
 #
@@ -364,8 +369,8 @@ LINK_FLAGS= \
     $(SECLIB) $(RPCLIB) $(C_RUNTIME) oldnames.lib kernel32.lib user32.lib \
         /subsystem:windows $(PDB) $(MACHINE) \
         /dll /def:"$(BUILDDIR)\nsldap$(DLL_BITS).def" \
-        /implib:"$(OUTDIR)/nsldap$(DLL_BITS).lib" \
-    /nodefaultlib /out:"$(OUTDIR)/nsldap$(DLL_BITS).dll" 
+        /implib:"$(OUTDIR)/nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).lib" \
+    /nodefaultlib /out:"$(OUTDIR)/nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll" 
 !else
     $(LFLAGS) \
 !if defined(LINK_SEC)
@@ -450,7 +455,7 @@ all: \
 !if "$(MOZ_BITS)"=="16"
 win16suxrox \
 !endif
-"$(OUTDIR)" $(BUILDDIR)\makedep.exe $(OUTDIR)\nsldap.dep $(VERFILE)
+"$(OUTDIR)" $(OUTDIR)\nsldap.dep $(VERFILE)
 
 !if "$(MOZ_BITS)"=="16"
 # Copy long-named files into 8.3 since NT 3.51 seems to require it. 
@@ -490,7 +495,7 @@ $(OUTDIR)\nsldap.dep: $(BUILDDIR)\\nsldap.mak
         @rem <<$(PROD)$(VERSTR).dep
         $(CINCLUDES) -O $(OUTDIR)\nsldap.dep
 <<
-        $(BUILDDIR)\makedep @$(PROD)$(VERSTR).dep -F <<
+	$(MOZ_TOOLS)\makedep @$(PROD)$(VERSTR).dep -F <<
                 $(LIBLDAP)\abandon.c
                 $(LIBLDAP)\add.c
                 $(LIBLDAP)\bind.c
@@ -562,7 +567,7 @@ $(OUTDIR)\nsldap.dep: $(BUILDDIR)\\nsldap.mak
                 $(LIBLDAP)\unbind.c
                 $(LIBLDAP)\unescape.c
                 $(LIBLDAP)\url.c
-		$(LIBLDAP)\utf8.c
+		$(LIBLDAP)\utf8.c
 		$(LIBLDAP)\vlistctrl.c
 		
                 $(LIBLBER)\bprint.c
@@ -576,9 +581,6 @@ $(OUTDIR)\nsldap.dep: $(BUILDDIR)\\nsldap.mak
 !endif
 
 <<
-
-$(BUILDDIR)\makedep.exe: 
-        copy $(MOZ_SRC)\mozilla\cmd\winfe\mkfiles32\makedep.exe $(BUILDDIR)\makedep.exe
 
 !endif 
 
@@ -616,11 +618,11 @@ $(DIST_PUBLIC)\ldap :
 # Copy everything an LDAP client could need up to DIST
 
 install : \
-        $(DIST)\bin\nsldap$(DLL_BITS).dll \
-        $(DIST)\lib\nsldap$(DLL_BITS).lib \
+        $(DIST)\bin\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll \
+        $(DIST)\lib\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).lib \
 !if "$(MOZ_BITS)"=="32"
 # makedep needs to generate syntax for 16-bit lib.exe
-        $(DIST)\lib\nsldaps$(DLL_BITS).lib \
+        $(DIST)\lib\nsldaps$(DLL_BITS)v$(MOZ_LDAP_VER).lib \
 !endif
 !if "$(MOZ_BITS)"=="32"
         $(DIST_PUBLIC)\ldap\lber.h \
@@ -632,16 +634,16 @@ install : \
         $(DIST_PUBLIC)\win16\disptmpl.h \
 !endif
 
-$(DIST)\bin\nsldap$(DLL_BITS).dll : $(OUTDIR)\nsldap$(DLL_BITS).dll
-        copy $(OUTDIR)\nsldap$(DLL_BITS).dll $(DIST)\bin\nsldap$(DLL_BITS).dll
+$(DIST)\bin\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll : $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll
+        copy $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll $(DIST)\bin\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll
 
-$(DIST)\lib\nsldap$(DLL_BITS).lib : $(OUTDIR)\nsldap$(DLL_BITS).lib
-        copy $(OUTDIR)\nsldap$(DLL_BITS).lib $(DIST)\lib\nsldap$(DLL_BITS).lib
+$(DIST)\lib\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).lib : $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).lib
+        copy $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).lib $(DIST)\lib\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).lib
 
 !if "$(MOZ_BITS)"=="32"
 # makedep needs to generate syntax for 16-bit lib.exe
-$(DIST)\lib\nsldaps$(DLL_BITS).lib : $(OUTDIR)\nsldaps$(DLL_BITS).lib
-        copy $(OUTDIR)\nsldaps$(DLL_BITS).lib $(DIST)\lib\nsldaps$(DLL_BITS).lib
+$(DIST)\lib\nsldaps$(DLL_BITS)v$(MOZ_LDAP_VER).lib : $(OUTDIR)\nsldaps$(DLL_BITS)v$(MOZ_LDAP_VER).lib
+        copy $(OUTDIR)\nsldaps$(DLL_BITS)v$(MOZ_LDAP_VER).lib $(DIST)\lib\nsldaps$(DLL_BITS)v$(MOZ_LDAP_VER).lib
 !endif
 
 !if "$(MOZ_BITS)"=="32"
@@ -674,7 +676,7 @@ $(DIST_PUBLIC)\win16\disptmpl.h : $(LDAP_SRC)\ldap\include\disptmpl.h
 #
 #==============================================================================
 
-all : $(OUTDIR)\nsldap.dep "$(OUTDIR)" $(OUTDIR)\nsldap$(DLL_BITS).dll \
+all : $(OUTDIR)\nsldap.dep "$(OUTDIR)" $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll \
 !if "$(MOZ_BITS)"=="32"
 # makedep needs to generate syntax for 16-bit lib.exe
 $(STATICLIB)
@@ -775,7 +777,7 @@ $(STATICLIB) : "$(OUTDIR)" $(OBJ_FILES)
 !endif
 
 #
-"$(OUTDIR)\nsldap$(DLL_BITS).dll" : "$(OUTDIR)" $(OBJ_FILES) $(OUTDIR)\nsldap.res
+"$(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll" : "$(OUTDIR)" $(OBJ_FILES) $(OUTDIR)\nsldap.res
    @rem <<$(PROD)$(VERSTR).lk
 !if "$(MOZ_BITS)"=="32"
     $(LINK_FLAGS) $(LINK_OBJS)
@@ -851,8 +853,8 @@ $(STATICLIB) : "$(OUTDIR)" $(OBJ_FILES)
         $(SECDIR)\xp_trace.obj +
 !endif
     $(OUTDIR)\WSA.obj
-    $(OUTDIR)\nsldap$(DLL_BITS).dll
-    $(OUTDIR)\nsldap$(DLL_BITS).map
+    $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll
+    $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).map
     c:\msvc\lib\ + 
 !if defined(LINK_SEC)
     $(SECLIB) +
@@ -865,9 +867,9 @@ $(STATICLIB) : "$(OUTDIR)" $(OBJ_FILES)
 <<
    $(LINK) @$(PROD)$(VERSTR).lk
 !if "$(MOZ_BITS)"=="16"
-    $(RSC) /K $(OUTDIR)\nsldap.res $(OUTDIR)\nsldap$(DLL_BITS).dll
+    $(RSC) /K $(OUTDIR)\nsldap.res $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).dll
 !if "$(LINK)"=="link"
-        implib /nowep /noi $(OUTDIR)\nsldap$(DLL_BITS).lib libldap.def
+        implib /nowep /noi $(OUTDIR)\nsldap$(DLL_BITS)v$(MOZ_LDAP_VER).lib libldap.def
 !endif
 !endif
 
