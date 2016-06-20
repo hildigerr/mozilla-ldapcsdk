@@ -1,4 +1,3 @@
-#
 # ***** BEGIN LICENSE BLOCK *****
 # Version: MPL 1.1/GPL 2.0/LGPL 2.1
 # 
@@ -16,7 +15,7 @@
 # 
 # The Initial Developer of the Original Code is
 # Netscape Communications Corporation.
-# Portions created by the Initial Developer are Copyright (C) 1996-2000
+# Portions created by the Initial Developer are Copyright (C) 1996-1999
 # the Initial Developer. All Rights Reserved.
 # 
 # Contributor(s):
@@ -35,62 +34,15 @@
 # 
 # ***** END LICENSE BLOCK ***** 
 
-Summary of options used by the LDAP tools
-
-Updated 1-April-2003 by Mark Smith <mcs@netscape.com>
-
-
-Only single letter options in the sets [0-9], [A-Z], and [a-z] are
-listed.
-
-The "raw" lists are taken from the calls to getopt() and
-ldaptool_process_args().
-
-The "sorted" lists are just that -- sorted versions of the raw list.
-
-The "all" lists include options from common.c as well as the tool-specific
-options.
-
-The "avail" lists included options that are available for use.
-
-
-common.c (supported by all of the tools):
-	raw:	gnvEMRHZ02:3d:D:f:h:I:j:K:N:O:o:P:p:Q:W:w:V:m:i:k:y:Y:J:
-	sorted: 023 DEHIJKMNOPQRVWYZ dfghijkmnopvwy
-	avail:	[4-9] (not used by any of the tools)
-
-ldapcmp.c:
-	raw:	Bb:l:s:z:
-	sorted:	B blsz
-	all:	023 BDEHIJKMNOPQRVWYZ bdfghijklmnopsvwyz
-	avail:	1 [4-9] ACFGLSTU aceqrtux
-
-ldapcompare.c:
-	raw:	cq
-	sorted:	cq
-	all:	023 DEHIJKMNOPQRVWYZ cdfghijkmnopqvwy
-	avail:	1 [4-9] ABCFGLSTU abelrstuxz
-
-ldapdelete.c (deprecated)
-	raw:	c
-	sorted:	c
-	all:	023 DEHIJKMNOPQRVWYZ cdfghijkmnopvwy
-	avail:	1 [4-9] ABCFGLSTU abelqrstuxz
-
-ldapmodify.c
-	raw:	aAbcFe:B:q
-	sorted:	ABF abceq
-	all:	023 ABDEFHIJKMNOPQRVWYZ abcdefghijkmnopqvwy
-	avail:	1 [4-9] CGLSTU lrstuxz
-
-ldapmodrdn.c (deprecated)
-	raw:	cr
-	sorted:	cr
-	all:	023 DEHIJKMNOPQRVWYZ cdfghijklmnoprvwy
-	avail:	1 [4-9]  ABCFGLSTU abelqstuxz
-
-ldapsearch.c
-	raw:	ABLTU1eortuxa:b:F:G:l:S:s:z:C:c:X:
-	sorted:	1 ABCFGLSTUX abceorstuxz
-	all:	0123 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnoprstuvwxyz
-	avail:	[4-9] q
+3001	ldif_parse_line
+3002	ldif_getline
+3003	ldif_put_type_and_value
+3004	ldif_put_type_and_value_nowrap
+3005	ldif_put_type_and_value_with_options
+3006	ldif_type_and_value
+3007	ldif_type_and_value_nowrap
+3008	ldif_type_and_value_with_options
+3009	ldif_base64_decode
+3010	ldif_base64_encode
+3011	ldif_base64_encode_nowrap
+3012	ldif_get_entry
