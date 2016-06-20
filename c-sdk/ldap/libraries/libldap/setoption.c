@@ -1,22 +1,41 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
- * The contents of this file are subject to the Netscape Public License
- * Version 1.0 (the "NPL"); you may not use this file except in
- * compliance with the NPL.  You may obtain a copy of the NPL at
- * http://www.mozilla.org/NPL/
- *
- * Software distributed under the NPL is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the NPL
+/* ***** BEGIN LICENSE BLOCK *****
+ * Version: MPL 1.1/GPL 2.0/LGPL 2.1
+ * 
+ * The contents of this file are subject to the Mozilla Public License Version 
+ * 1.1 (the "License"); you may not use this file except in compliance with 
+ * the License. You may obtain a copy of the License at 
+ * http://www.mozilla.org/MPL/
+ * 
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
  * for the specific language governing rights and limitations under the
- * NPL.
- *
- * The Initial Developer of this code under the NPL is Netscape
- * Communications Corporation.  Portions created by Netscape are
- * Copyright (C) 1998 Netscape Communications Corporation.  All Rights
- * Reserved.
- */
+ * License.
+ * 
+ * The Original Code is Mozilla Communicator client code, released
+ * March 31, 1998.
+ * 
+ * The Initial Developer of the Original Code is
+ * Netscape Communications Corporation.
+ * Portions created by the Initial Developer are Copyright (C) 1998-1999
+ * the Initial Developer. All Rights Reserved.
+ * 
+ * Contributor(s):
+ * 
+ * Alternatively, the contents of this file may be used under the terms of
+ * either of the GNU General Public License Version 2 or later (the "GPL"),
+ * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+ * in which case the provisions of the GPL or the LGPL are applicable instead
+ * of those above. If you wish to allow use of your version of this file only
+ * under the terms of either the GPL or the LGPL, and not to allow others to
+ * use your version of this file under the terms of the MPL, indicate your
+ * decision by deleting the provisions above and replace them with the notice
+ * and other provisions required by the GPL or the LGPL. If you do not delete
+ * the provisions above, a recipient may use your version of this file under
+ * the terms of any one of the MPL, the GPL or the LGPL.
+ * 
+ * ***** END LICENSE BLOCK ***** */
 /*
- * `setoption.c - ldap_set_option implementation 
+ * setoption.c - ldap_set_option implementation 
  */
 
 #include "ldap-int.h"
@@ -31,10 +50,10 @@
 
 int
 LDAP_CALL
-ldap_set_option( LDAP *ld, int option, void *optdata )
+ldap_set_option( LDAP *ld, int option, const void *optdata )
 {
-	int		rc;
-	struct ldap	copyld;
+	int		rc, i;
+	char		*matched, *errstr;
 
 	if ( !nsldapi_initialized ) {
 		nsldapi_initialize_defaults();
@@ -65,6 +84,16 @@ ldap_set_option( LDAP *ld, int option, void *optdata )
 
 		return( 0 );
 	}
+	/* 
+     * LDAP_OPT_DEBUG_LEVEL is global 
+     */
+    if (LDAP_OPT_DEBUG_LEVEL == option) 
+    {
+#ifdef LDAP_DEBUG	  
+        ldap_debug = *((int *) optdata);
+#endif
+        return 0;
+    }
 
 	/*
 	 * if ld is NULL, arrange to modify our default settings
@@ -81,8 +110,11 @@ ldap_set_option( LDAP *ld, int option, void *optdata )
 	}
 
 	rc = 0;
-	LDAP_MUTEX_LOCK( ld, LDAP_OPTION_LOCK );
-	LDAP_SET_LDERRNO( ld, LDAP_SUCCESS, NULL, NULL );
+	if ( ld != &nsldapi_ld_defaults
+		&& option != LDAP_OPT_EXTRA_THREAD_FN_PTRS
+		&& option != LDAP_OPT_THREAD_FN_PTRS ) {
+	    LDAP_MUTEX_LOCK( ld, LDAP_OPTION_LOCK );
+	}
 	switch( option ) {
 	/* options that can be turned on and off */
 #ifdef LDAP_DNS
@@ -95,11 +127,9 @@ ldap_set_option( LDAP *ld, int option, void *optdata )
 		LDAP_SETCLR_BITOPT( ld, LDAP_BITOPT_REFERRALS, optdata );
 		break;
 
-#ifdef LDAP_SSLIO_HOOKS
 	case LDAP_OPT_SSL:
 		LDAP_SETCLR_BITOPT( ld, LDAP_BITOPT_SSL, optdata );
 		break;
-#endif
 
 	case LDAP_OPT_RESTART:
 		LDAP_SETCLR_BITOPT( ld, LDAP_BITOPT_RESTART, optdata );
@@ -108,9 +138,12 @@ ldap_set_option( LDAP *ld, int option, void *optdata )
 	case LDAP_OPT_RECONNECT:
 		LDAP_SETCLR_BITOPT( ld, LDAP_BITOPT_RECONNECT, optdata );
 		break;
+
+#ifdef LDAP_ASYNC_IO
 	case LDAP_OPT_ASYNC_CONNECT:
  		LDAP_SETCLR_BITOPT(ld, LDAP_BITOPT_ASYNC, optdata );
 	 	break;
+#endif /* LDAP_ASYNC_IO */
 
 	/* fields in the LDAP structure */
 	case LDAP_OPT_DEREF:
@@ -132,10 +165,12 @@ ldap_set_option( LDAP *ld, int option, void *optdata )
 		}
 		break;
 	case LDAP_OPT_SERVER_CONTROLS:
+		/* nsldapi_dup_controls returns -1 and sets lderrno on error */
 		rc = nsldapi_dup_controls( ld, &ld->ld_servercontrols,
 		    (LDAPControl **)optdata );
 		break;
 	case LDAP_OPT_CLIENT_CONTROLS:
+		/* nsldapi_dup_controls returns -1 and sets lderrno on error */
 		rc = nsldapi_dup_controls( ld, &ld->ld_clientcontrols,
 		    (LDAPControl **)optdata );
 		break;
@@ -148,35 +183,97 @@ ldap_set_option( LDAP *ld, int option, void *optdata )
 		ld->ld_rebind_arg = (void *) optdata;
 		break;
 
-#ifdef LDAP_SSLIO_HOOKS
 	/* i/o function pointers */
 	case LDAP_OPT_IO_FN_PTRS:
-		/* struct copy */
-		ld->ld_io = *((struct ldap_io_fns *) optdata);
-		rc = ber_sockbuf_set_option( ld->ld_sbp,
-		    LBER_SOCKBUF_OPT_READ_FN, (void *) ld->ld_read_fn );
-		rc |= ber_sockbuf_set_option( ld->ld_sbp,
-		    LBER_SOCKBUF_OPT_WRITE_FN, (void *) ld->ld_write_fn );
-		break;
-#endif
-
-	/* thread function pointers */
-	case LDAP_OPT_THREAD_FN_PTRS:
-		/* struct copy */
-		ld->ld_thread = *((struct ldap_thread_fns *) optdata);
-		if ( ld->ld_mutex_alloc_fn != NULL &&
-		    ld != &nsldapi_ld_defaults &&
-		    ld->ld_mutex != NULL ) {
-			int i;
-			for( i=0; i<LDAP_MAX_LOCK; i++ )
-				ld->ld_mutex[i] = (ld->ld_mutex_alloc_fn)();
+		if (( rc = nsldapi_install_compat_io_fns( ld,
+		    (struct ldap_io_fns *)optdata )) != LDAP_SUCCESS ) {
+			LDAP_SET_LDERRNO( ld, rc, NULL, NULL );
+			rc = -1;
 		}
 		break;
 
+	/* extended i/o function pointers */
+	case LDAP_X_OPT_EXTIO_FN_PTRS:
+	  /* denotes use of old iofns struct (no writev) */
+	  if (((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_size == LDAP_X_EXTIO_FNS_SIZE_REV0) {
+	    ld->ld_extio_size = LDAP_X_EXTIO_FNS_SIZE;
+	    ld->ld_extclose_fn = ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_close;
+	    ld->ld_extconnect_fn = ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_connect;
+	    ld->ld_extread_fn = ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_read;
+	    ld->ld_extwrite_fn = ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_write;
+	    ld->ld_extpoll_fn = ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_poll;
+	    ld->ld_extnewhandle_fn = ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_newhandle;
+	    ld->ld_extdisposehandle_fn = ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_disposehandle;
+	    ld->ld_ext_session_arg = ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_session_arg;
+	    ld->ld_extwritev_fn = NULL;
+	    if ( ber_sockbuf_set_option( ld->ld_sbp, LBER_SOCKBUF_OPT_EXT_IO_FNS,
+					 &(ld->ld_ext_io_fns) ) != 0 ) {
+	      LDAP_SET_LDERRNO( ld, LDAP_LOCAL_ERROR, NULL, NULL );
+	      rc = -1;
+	      break;
+	    }
+	  }
+	  else {
+	    /* struct copy */
+	    ld->ld_ext_io_fns = *((struct ldap_x_ext_io_fns *) optdata);
+	  }
+	  if (( rc = nsldapi_install_lber_extiofns( ld, ld->ld_sbp ))
+	      != LDAP_SUCCESS ) {
+	    LDAP_SET_LDERRNO( ld, rc, NULL, NULL );
+	    rc = -1;
+	  }
+	  break;
+
+	 /* set Socket Arg in extended socket i/o functions*/
+	case LDAP_X_OPT_SOCKETARG:
+	  if ( ber_sockbuf_set_option( ld->ld_sbp,
+	    LBER_SOCKBUF_OPT_SOCK_ARG, (void *)optdata ) != 0 ) {
+		LDAP_SET_LDERRNO( ld, LDAP_LOCAL_ERROR, NULL, NULL );
+		rc = -1;
+	  }
+		
+	  break;
+	  
+	/* thread function pointers */
+	case LDAP_OPT_THREAD_FN_PTRS:
+		/*
+		 * It is only safe to set the thread function pointers
+		 * when one thread is using the LDAP session handle.
+		 */
+		/* free existing mutexes (some are allocated by ldap_init()) */
+		nsldapi_mutex_free_all( ld );
+
+		/* struct copy */
+		ld->ld_thread = *((struct ldap_thread_fns *) optdata);
+
+		/* allocate new mutexes */
+		nsldapi_mutex_alloc_all( ld );
+
+		/* LDAP_OPTION_LOCK was never locked... so just return */
+		return (rc);
+
 	/* extra thread function pointers */
 	case LDAP_OPT_EXTRA_THREAD_FN_PTRS:
-		ld->ld_thread2 = *((struct ldap_extra_thread_fns *) optdata);
-		break;
+	/* The extra thread funcs will only pick up the threadid */
+	    ld->ld_thread2  = *((struct ldap_extra_thread_fns *) optdata);
+	    
+	/* Reset the rest of the structure preserving the threadid fn */
+	    ld->ld_mutex_trylock_fn =  (LDAP_TF_MUTEX_TRYLOCK_CALLBACK *)NULL;
+	    ld->ld_sema_alloc_fn = (LDAP_TF_SEMA_ALLOC_CALLBACK *) NULL;
+	    ld->ld_sema_free_fn = (LDAP_TF_SEMA_FREE_CALLBACK *) NULL;
+	    ld->ld_sema_wait_fn = (LDAP_TF_SEMA_WAIT_CALLBACK *) NULL;
+	    ld->ld_sema_post_fn = (LDAP_TF_SEMA_POST_CALLBACK *) NULL;
+
+	/* We assume that only one thread is active when replacing */
+	/* the threadid function.  We will now proceed and reset all */
+	/* of the threadid/refcounts */
+	    for( i=0; i<LDAP_MAX_LOCK; i++ ) {
+                ld->ld_mutex_threadid[i] = (void *) -1;
+                ld->ld_mutex_refcnt[i] = 0;
+            }
+
+	/* LDAP_OPTION_LOCK was never locked... so just return */
+	    return (rc);
 
 	/* DNS function pointers */
 	case LDAP_OPT_DNS_FN_PTRS:
@@ -195,15 +292,46 @@ ldap_set_option( LDAP *ld, int option, void *optdata )
 	case LDAP_OPT_CACHE_ENABLE:
 		ld->ld_cache_on = *((int *) optdata);
 		break;
+
+	case LDAP_OPT_ERROR_NUMBER:
+		LDAP_GET_LDERRNO( ld, &matched, &errstr );
+		matched = nsldapi_strdup( matched );
+		errstr = nsldapi_strdup( errstr );
+		LDAP_SET_LDERRNO( ld, *((int *) optdata), matched, errstr );
+		break;
+
+	case LDAP_OPT_ERROR_STRING:
+		rc = LDAP_GET_LDERRNO( ld, &matched, NULL );
+		matched = nsldapi_strdup( matched );
+		LDAP_SET_LDERRNO( ld, rc, matched,
+		    nsldapi_strdup((char *) optdata));
+		rc = LDAP_SUCCESS;
+		break;
+
+	case LDAP_OPT_MATCHED_DN:
+		rc = LDAP_GET_LDERRNO( ld, NULL, &errstr );
+		errstr = nsldapi_strdup( errstr );
+		LDAP_SET_LDERRNO( ld, rc,
+		    nsldapi_strdup((char *) optdata), errstr );
+		rc = LDAP_SUCCESS;
+		break;
+
 	case LDAP_OPT_PREFERRED_LANGUAGE:
-		if ( NULL != ld->ld_preferred_language )
+		if ( NULL != ld->ld_preferred_language ) {
 			NSLDAPI_FREE(ld->ld_preferred_language);
-		if ( NULL == optdata ) {
-			ld->ld_preferred_language = NULL;
-		} else {
-			ld->ld_preferred_language =
-			    nsldapi_strdup((char *) optdata);
 		}
+		ld->ld_preferred_language = nsldapi_strdup((char *) optdata);
+		break;
+
+	case LDAP_OPT_HOST_NAME:
+		if ( NULL != ld->ld_defhost ) {
+			NSLDAPI_FREE(ld->ld_defhost);
+		}
+		ld->ld_defhost = nsldapi_strdup((char *) optdata);
+		break;
+
+	case LDAP_X_OPT_CONNECT_TIMEOUT:
+		ld->ld_connect_timeout = *((int *) optdata);
 		break;
 
 	default:
@@ -211,6 +339,8 @@ ldap_set_option( LDAP *ld, int option, void *optdata )
 		rc = -1;
 	}
 
-	LDAP_MUTEX_UNLOCK( ld, LDAP_OPTION_LOCK );
+	if ( ld != &nsldapi_ld_defaults ) {
+	    LDAP_MUTEX_UNLOCK( ld, LDAP_OPTION_LOCK );
+	}
 	return( rc );
 }

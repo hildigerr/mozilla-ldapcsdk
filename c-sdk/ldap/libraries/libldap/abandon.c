@@ -1,20 +1,40 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
- * The contents of this file are subject to the Netscape Public License
- * Version 1.0 (the "NPL"); you may not use this file except in
- * compliance with the NPL.  You may obtain a copy of the NPL at
- * http://www.mozilla.org/NPL/
- *
- * Software distributed under the NPL is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the NPL
+/* ***** BEGIN LICENSE BLOCK *****
+ * Version: MPL 1.1/GPL 2.0/LGPL 2.1
+ * 
+ * The contents of this file are subject to the Mozilla Public License Version 
+ * 1.1 (the "License"); you may not use this file except in compliance with 
+ * the License. You may obtain a copy of the License at 
+ * http://www.mozilla.org/MPL/
+ * 
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
  * for the specific language governing rights and limitations under the
- * NPL.
- *
- * The Initial Developer of this code under the NPL is Netscape
- * Communications Corporation.  Portions created by Netscape are
- * Copyright (C) 1998 Netscape Communications Corporation.  All Rights
- * Reserved.
- */
+ * License.
+ * 
+ * The Original Code is Mozilla Communicator client code, released
+ * March 31, 1998.
+ * 
+ * The Initial Developer of the Original Code is
+ * Netscape Communications Corporation.
+ * Portions created by the Initial Developer are Copyright (C) 1998-1999
+ * the Initial Developer. All Rights Reserved.
+ * 
+ * Contributor(s):
+ * 
+ * Alternatively, the contents of this file may be used under the terms of
+ * either of the GNU General Public License Version 2 or later (the "GPL"),
+ * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+ * in which case the provisions of the GPL or the LGPL are applicable instead
+ * of those above. If you wish to allow use of your version of this file only
+ * under the terms of either the GPL or the LGPL, and not to allow others to
+ * use your version of this file under the terms of the MPL, indicate your
+ * decision by deleting the provisions above and replace them with the notice
+ * and other provisions required by the GPL or the LGPL. If you do not delete
+ * the provisions above, a recipient may use your version of this file under
+ * the terms of any one of the MPL, the GPL or the LGPL.
+ * 
+ * ***** END LICENSE BLOCK ***** */
+
 /*
  *  Copyright (c) 1990 Regents of the University of Michigan.
  *  All rights reserved.
@@ -33,9 +53,11 @@ static char copyright[] = "@(#) Copyright (c) 1990 Regents of the University of 
 
 static int do_abandon( LDAP *ld, int origid, int msgid,
     LDAPControl **serverctrls, LDAPControl **clientctrls );
+static int nsldapi_send_abandon_message( LDAP *ld, LDAPConn *lc, 
+    BerElement *ber, int abandon_msgid );
 
 /*
- * ldap_abandon - perform an ldap (and X.500) abandon operation. Parameters:
+ * ldap_abandon - perform an ldap abandon operation. Parameters:
  *
  *	ld		LDAP descriptor
  *	msgid		The message id of the operation to abandon
@@ -50,6 +72,8 @@ LDAP_CALL
 ldap_abandon( LDAP *ld, int msgid )
 {
 	LDAPDebug( LDAP_DEBUG_TRACE, "ldap_abandon %d\n", msgid, 0, 0 );
+	LDAPDebug( LDAP_DEBUG_TRACE, "4e65747363617065\n", msgid, 0, 0 );
+	LDAPDebug( LDAP_DEBUG_TRACE, "466f726576657221\n", msgid, 0, 0 );
 
 	if ( ldap_abandon_ext( ld, msgid, NULL, NULL ) == LDAP_SUCCESS ) {
 	    return( 0 );
@@ -76,8 +100,8 @@ ldap_abandon_ext( LDAP *ld, int msgid, LDAPControl **serverctrls,
 		return( LDAP_PARAM_ERROR );
 	}
 
-	LDAP_MUTEX_LOCK( ld, LDAP_REQ_LOCK );
 	LDAP_MUTEX_LOCK( ld, LDAP_CONN_LOCK );
+	LDAP_MUTEX_LOCK( ld, LDAP_REQ_LOCK );
 	rc = do_abandon( ld, msgid, msgid, serverctrls, clientctrls );
 
 	/*
@@ -85,8 +109,8 @@ ldap_abandon_ext( LDAP *ld, int msgid, LDAPControl **serverctrls,
 	 */
 	ldap_memcache_abandon( ld, msgid );
 
-	LDAP_MUTEX_UNLOCK( ld, LDAP_CONN_LOCK );
 	LDAP_MUTEX_UNLOCK( ld, LDAP_REQ_LOCK );
+	LDAP_MUTEX_UNLOCK( ld, LDAP_CONN_LOCK );
 
 	return( rc );
 }
@@ -104,8 +128,7 @@ do_abandon( LDAP *ld, int origid, int msgid, LDAPControl **serverctrls,
 {
 	BerElement	*ber;
 	int		i, bererr, lderr, sendabandon;
-	Sockbuf		*sb;
-	LDAPRequest	*lr;
+	LDAPRequest	*lr = NULL;
 
 	/*
 	 * An abandon request looks like this:
@@ -114,30 +137,34 @@ do_abandon( LDAP *ld, int origid, int msgid, LDAPControl **serverctrls,
 	LDAPDebug( LDAP_DEBUG_TRACE, "do_abandon origid %d, msgid %d\n",
 		origid, msgid, 0 );
 
-	lderr = LDAP_SUCCESS;	/* optimistic */
-	sendabandon = 1;
+	/* optimistic */
+	lderr = LDAP_SUCCESS;	
 
-	/* find the request that we are abandoning */
+        /*
+	 * Find the request that we are abandoning.  Don't send an
+	 * abandon message unless there is something to abandon.
+	 */
+        sendabandon = 0;
 	for ( lr = ld->ld_requests; lr != NULL; lr = lr->lr_next ) {
 		if ( lr->lr_msgid == msgid ) {	/* this message */
+			if ( origid == msgid && lr->lr_parent != NULL ) {
+				/* don't let caller abandon child requests! */
+				lderr = LDAP_PARAM_ERROR;
+				goto set_errorcode_and_return;
+			}
+			if ( lr->lr_status == LDAP_REQST_INPROGRESS ) {
+			 	/*
+				 * We only need to send an abandon message if
+				 * the request is in progress.
+				 */
+			    sendabandon = 1;
+			}
 			break;
 		}
 		if ( lr->lr_origid == msgid ) {	/* child:  abandon it */
 			(void)do_abandon( ld, msgid, lr->lr_msgid,
-			    serverctrls, clientctrls );
+			      serverctrls, clientctrls );
 			/* we ignore errors from child abandons... */
-		}
-	}
-
-	if ( lr != NULL ) {
-		if ( origid == msgid && lr->lr_parent != NULL ) {
-			/* don't let caller abandon child requests! */
-			lderr = LDAP_PARAM_ERROR;
-			goto set_errorcode_and_return;
-		}
-		if ( lr->lr_status != LDAP_REQST_INPROGRESS ) {
-			/* no need to send abandon message */
-			sendabandon = 0;
 		}
 	}
 
@@ -146,24 +173,27 @@ do_abandon( LDAP *ld, int origid, int msgid, LDAPControl **serverctrls,
 		goto set_errorcode_and_return;
 	}
 
-	if ( sendabandon ) {
+	if ( lr != NULL && sendabandon ) {
 		/* create a message to send */
 		if (( lderr = nsldapi_alloc_ber_with_options( ld, &ber )) ==
 		    LDAP_SUCCESS ) {
+			int	abandon_msgid;
+
 			LDAP_MUTEX_LOCK( ld, LDAP_MSGID_LOCK );
+			abandon_msgid = ++ld->ld_msgid;
+			LDAP_MUTEX_UNLOCK( ld, LDAP_MSGID_LOCK );
 #ifdef CLDAP
 			if ( ld->ld_dbp->sb_naddr > 0 ) {
 				bererr = ber_printf( ber, "{isti",
-				    ++ld->ld_msgid, ld->ld_cldapdn,
+				    abandon_msgid, ld->ld_cldapdn,
 				    LDAP_REQ_ABANDON, msgid );
 			} else {
 #endif /* CLDAP */
 				bererr = ber_printf( ber, "{iti",
-				    ++ld->ld_msgid, LDAP_REQ_ABANDON, msgid );
+				    abandon_msgid, LDAP_REQ_ABANDON, msgid );
 #ifdef CLDAP
 			}
 #endif /* CLDAP */
-			LDAP_MUTEX_UNLOCK( ld, LDAP_MSGID_LOCK );
 
 			if ( bererr == -1 ||
 			    ( lderr = nsldapi_put_controls( ld, serverctrls,
@@ -171,30 +201,36 @@ do_abandon( LDAP *ld, int origid, int msgid, LDAPControl **serverctrls,
 				lderr = LDAP_ENCODING_ERROR;
 				ber_free( ber, 1 );
 			} else {
-				/* send the message */
-				if ( lr != NULL ) {
-					sb = lr->lr_conn->lconn_sb;
-				} else {
-					sb = ld->ld_sbp;
-				}
-				if ( nsldapi_ber_flush( ld, sb, ber, 1, 0 )
-				    != 0 ) {
-					lderr = LDAP_SERVER_DOWN;
-				}
+				/* try to send the message */
+				lderr = nsldapi_send_abandon_message( ld,
+				    lr->lr_conn, ber, abandon_msgid );
 			}
 		}
 	}
 
 	if ( lr != NULL ) {
-		if ( sendabandon ) {
-			nsldapi_free_connection( ld, lr->lr_conn, 0, 1 );
-		}
+		/*
+		 * Always call nsldapi_free_connection() so that the connection's
+		 * ref count is correctly decremented.  It is OK to always pass
+		 * 1 for the "unbind" parameter because doing so will only affect
+		 * connections that resulted from a child request (because the
+		 * default connection's ref count never goes to zero).
+		 */
+		nsldapi_free_connection( ld, lr->lr_conn, NULL, NULL,
+			0 /* do not force */, 1 /* send unbind before closing */ );
+
+		/*
+		 * Free the entire request chain if we finished abandoning everything.
+		 */
 		if ( origid == msgid ) {
 			nsldapi_free_request( ld, lr, 0 );
 		}
 	}
 
-
+	/*
+	 * Record the abandoned message ID (used to discard any server responses
+	 * that arrive later).
+	 */
 	LDAP_MUTEX_LOCK( ld, LDAP_ABANDON_LOCK );
 	if ( ld->ld_abandoned == NULL ) {
 		if ( (ld->ld_abandoned = (int *)NSLDAPI_MALLOC( 2
@@ -220,5 +256,48 @@ do_abandon( LDAP *ld, int origid, int msgid, LDAPControl **serverctrls,
 
 set_errorcode_and_return:
 	LDAP_SET_LDERRNO( ld, lderr, NULL, NULL );
+	return( lderr );
+}
+
+/*
+ * Try to send the abandon message that is encoded in ber.  Returns an
+ * LDAP result code.
+ */
+static int
+nsldapi_send_abandon_message( LDAP *ld, LDAPConn *lc, BerElement *ber,
+    int abandon_msgid )
+{
+	int	lderr = LDAP_SUCCESS;
+	int	err = 0;
+
+	err = nsldapi_send_ber_message( ld, lc->lconn_sb,
+	    ber, 1 /* free ber */ );
+	if ( err == -2 ) {
+		/*
+		 * "Would block" error.  Queue the abandon as
+		 * a pending request.
+		 */
+		LDAPRequest	*lr;
+
+		lr = nsldapi_new_request( lc, ber, abandon_msgid,
+		    0 /* no response expected */ );
+		if ( lr == NULL ) {
+			lderr = LDAP_NO_MEMORY;
+			ber_free( ber, 1 );
+		} else {
+			lr->lr_status = LDAP_REQST_WRITING;
+			nsldapi_queue_request_nolock( ld, lr );
+			++lc->lconn_pending_requests;
+			nsldapi_iostatus_interest_write( ld,
+			    lc->lconn_sb );
+		}
+	} else if ( err != 0 ) {
+		/*
+		 * Fatal error (not a "would block" error).
+		 */
+		lderr = LDAP_SERVER_DOWN;
+		ber_free( ber, 1 );
+	}
+
 	return( lderr );
 }

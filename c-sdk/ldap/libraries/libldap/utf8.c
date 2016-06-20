@@ -1,22 +1,42 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
- * The contents of this file are subject to the Netscape Public License
- * Version 1.0 (the "NPL"); you may not use this file except in
- * compliance with the NPL.  You may obtain a copy of the NPL at
- * http://www.mozilla.org/NPL/
- *
- * Software distributed under the NPL is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the NPL
+/* ***** BEGIN LICENSE BLOCK *****
+ * Version: MPL 1.1/GPL 2.0/LGPL 2.1
+ * 
+ * The contents of this file are subject to the Mozilla Public License Version 
+ * 1.1 (the "License"); you may not use this file except in compliance with 
+ * the License. You may obtain a copy of the License at 
+ * http://www.mozilla.org/MPL/
+ * 
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
  * for the specific language governing rights and limitations under the
- * NPL.
- *
- * The Initial Developer of this code under the NPL is Netscape
- * Communications Corporation.  Portions created by Netscape are
- * Copyright (C) 1998 Netscape Communications Corporation.  All Rights
- * Reserved.
- */
+ * License.
+ * 
+ * The Original Code is Mozilla Communicator client code, released
+ * March 31, 1998.
+ * 
+ * The Initial Developer of the Original Code is
+ * Netscape Communications Corporation.
+ * Portions created by the Initial Developer are Copyright (C) 1998-1999
+ * the Initial Developer. All Rights Reserved.
+ * 
+ * Contributor(s):
+ * 
+ * Alternatively, the contents of this file may be used under the terms of
+ * either of the GNU General Public License Version 2 or later (the "GPL"),
+ * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+ * in which case the provisions of the GPL or the LGPL are applicable instead
+ * of those above. If you wish to allow use of your version of this file only
+ * under the terms of either the GPL or the LGPL, and not to allow others to
+ * use your version of this file under the terms of the MPL, indicate your
+ * decision by deleting the provisions above and replace them with the notice
+ * and other provisions required by the GPL or the LGPL. If you do not delete
+ * the provisions above, a recipient may use your version of this file under
+ * the terms of any one of the MPL, the GPL or the LGPL.
+ * 
+ * ***** END LICENSE BLOCK ***** */
+
 /* uft8.c - misc. utf8 "string" functions. */
-#include "ldap.h"
+#include "ldap-int.h"
 
 static char UTF8len[64]
 = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -104,7 +124,7 @@ ldap_utf8characters (const char* src)
 unsigned long LDAP_CALL
 ldap_utf8getcc( const char** src )
 {
-    register unsigned long c;
+    register unsigned long c = 0;
     register const unsigned char* s = (const unsigned char*)*src;
     switch (UTF8len [(*s >> 2) & 0x3F]) {
       case 0: /* erroneous: s points to the middle of a character. */
@@ -221,17 +241,42 @@ int
 LDAP_CALL
 ldap_utf8isspace( char* s )
 {
-    register unsigned char c = *(unsigned char*)s;
-    if (0x80 & c) return 0;
-    switch (c) {
-      case ' ':
-      case '\t':
-      case '\n':
-      case '\r':
-      case '\v':
-      case '\f':
-	return 1;
-      default: break;
+    register unsigned char *c = (unsigned char*)s;
+    int len = ldap_utf8len(s);
+
+    if (len == 0) {
+	return 0;
+    } else if (len == 1) {
+	switch (*c) {
+	    case 0x09:
+	    case 0x0A:
+	    case 0x0B:
+	    case 0x0C:
+	    case 0x0D:
+	    case 0x20:
+		return 1;
+	    default:
+		return 0;
+	}
+    } else if (len == 2) {
+	if (*c == 0xc2) {
+		return *(c+1) == 0x80;
+	}
+    } else if (len == 3) {
+	if (*c == 0xE2) {
+	    c++;
+	    if (*c == 0x80) {
+		c++;
+		return (*c>=0x80 && *c<=0x8a);
+	    }
+	} else if (*c == 0xE3) {
+	    return (*(c+1)==0x80) && (*(c+2)==0x80);
+	} else if (*c==0xEF) {
+	    return (*(c+1)==0xBB) && (*(c+2)==0xBF);
+	}
+	return 0;
     }
+
+    /* should never reach here */
     return 0;
 }

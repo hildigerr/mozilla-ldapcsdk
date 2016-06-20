@@ -1,35 +1,65 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
- * The contents of this file are subject to the Netscape Public License
- * Version 1.0 (the "NPL"); you may not use this file except in
- * compliance with the NPL.  You may obtain a copy of the NPL at
- * http://www.mozilla.org/NPL/
- *
- * Software distributed under the NPL is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the NPL
+/* ***** BEGIN LICENSE BLOCK *****
+ * Version: MPL 1.1/GPL 2.0/LGPL 2.1
+ * 
+ * The contents of this file are subject to the Mozilla Public License Version 
+ * 1.1 (the "License"); you may not use this file except in compliance with 
+ * the License. You may obtain a copy of the License at 
+ * http://www.mozilla.org/MPL/
+ * 
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
  * for the specific language governing rights and limitations under the
- * NPL.
- *
- * The Initial Developer of this code under the NPL is Netscape
- * Communications Corporation.  Portions created by Netscape are
- * Copyright (C) 1998 Netscape Communications Corporation.  All Rights
- * Reserved.
- */
+ * License.
+ * 
+ * The Original Code is Mozilla Communicator client code, released
+ * March 31, 1998.
+ * 
+ * The Initial Developer of the Original Code is
+ * Netscape Communications Corporation.
+ * Portions created by the Initial Developer are Copyright (C) 1998-1999
+ * the Initial Developer. All Rights Reserved.
+ * 
+ * Contributor(s):
+ * 
+ * Alternatively, the contents of this file may be used under the terms of
+ * either of the GNU General Public License Version 2 or later (the "GPL"),
+ * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+ * in which case the provisions of the GPL or the LGPL are applicable instead
+ * of those above. If you wish to allow use of your version of this file only
+ * under the terms of either the GPL or the LGPL, and not to allow others to
+ * use your version of this file under the terms of the MPL, indicate your
+ * decision by deleting the provisions above and replace them with the notice
+ * and other provisions required by the GPL or the LGPL. If you do not delete
+ * the provisions above, a recipient may use your version of this file under
+ * the terms of any one of the MPL, the GPL or the LGPL.
+ * 
+ * ***** END LICENSE BLOCK ***** */
 #include "ldap-int.h"
 
 #define LDAP_GET_BITOPT( ld, bit ) \
 	((ld)->ld_options & bit ) != 0 ? 1 : 0
 
+static int nsldapi_get_api_info( LDAPAPIInfo *aip );
+static int nsldapi_get_feature_info( LDAPAPIFeatureInfo *fip );
+
+
 int
 LDAP_CALL
 ldap_get_option( LDAP *ld, int option, void *optdata )
 {
-	int		rc;
+	int		rc = 0;
 
 	if ( !nsldapi_initialized ) {
 		nsldapi_initialize_defaults();
 	}
 
+    /*
+     * optdata MUST be a valid pointer...
+     */
+    if (NULL == optdata)
+    {
+        return(LDAP_PARAM_ERROR);
+    }
 	/*
 	 * process global options (not associated with an LDAP session handle)
 	 */
@@ -38,6 +68,27 @@ ldap_get_option( LDAP *ld, int option, void *optdata )
 		*((struct ldap_memalloc_fns *)optdata) = nsldapi_memalloc_fns;
 		return( 0 );
 	}
+
+	if ( option == LDAP_OPT_API_INFO ) {
+		rc = nsldapi_get_api_info( (LDAPAPIInfo *)optdata );
+		if ( rc != LDAP_SUCCESS ) {
+			if ( ld != NULL ) {
+				LDAP_SET_LDERRNO( ld, rc, NULL, NULL );
+			}
+			return( -1 );
+		}
+		return( 0 );
+	}
+    /* 
+     * LDAP_OPT_DEBUG_LEVEL is global 
+     */
+    if (LDAP_OPT_DEBUG_LEVEL == option) 
+    {
+#ifdef LDAP_DEBUG	  
+        *((int *) optdata) = ldap_debug;
+#endif /* LDAP_DEBUG */
+        return ( 0 );
+    }
 
 	/*
 	 * if ld is NULL, arrange to return options from our default settings
@@ -50,8 +101,9 @@ ldap_get_option( LDAP *ld, int option, void *optdata )
 		return( -1 );	/* punt */
 	}
 
-	LDAP_MUTEX_LOCK( ld, LDAP_OPTION_LOCK );
-	LDAP_SET_LDERRNO( ld, LDAP_SUCCESS, NULL, NULL );
+
+	if (ld != &nsldapi_ld_defaults)
+		LDAP_MUTEX_LOCK( ld, LDAP_OPTION_LOCK );
 	switch( option ) {
 #ifdef LDAP_DNS
 	case LDAP_OPT_DNS:
@@ -64,11 +116,10 @@ ldap_get_option( LDAP *ld, int option, void *optdata )
 		    LDAP_GET_BITOPT( ld, LDAP_BITOPT_REFERRALS );
 		break;
 
-#ifdef LDAP_SSLIO_HOOKS
 	case LDAP_OPT_SSL:
 		*((int *) optdata) = LDAP_GET_BITOPT( ld, LDAP_BITOPT_SSL );
 		break;
-#endif
+
 	case LDAP_OPT_RESTART:
 		*((int *) optdata) = LDAP_GET_BITOPT( ld, LDAP_BITOPT_RESTART );
 		break;
@@ -78,17 +129,21 @@ ldap_get_option( LDAP *ld, int option, void *optdata )
 		    LDAP_GET_BITOPT( ld, LDAP_BITOPT_RECONNECT );
 		break;
 
+#ifdef LDAP_ASYNC_IO
 	case LDAP_OPT_ASYNC_CONNECT:
 		*((int *) optdata) =
 		    LDAP_GET_BITOPT( ld, LDAP_BITOPT_ASYNC );
 		break;
+#endif /* LDAP_ASYNC_IO */
 
 	/* stuff in the sockbuf */
 	case LDAP_OPT_DESC:
-		rc = ber_sockbuf_get_option( ld->ld_sbp,
-		    LBER_SOCKBUF_OPT_DESC, optdata );
-		LDAP_MUTEX_UNLOCK( ld, LDAP_OPTION_LOCK );
-		return( rc );
+		if ( ber_sockbuf_get_option( ld->ld_sbp,
+		    LBER_SOCKBUF_OPT_DESC, optdata ) != 0 ) {
+			LDAP_SET_LDERRNO( ld, LDAP_LOCAL_ERROR, NULL, NULL );
+			rc = -1;
+		}
+		break;
 
 	/* fields in the LDAP structure */
 	case LDAP_OPT_DEREF:
@@ -107,10 +162,13 @@ ldap_get_option( LDAP *ld, int option, void *optdata )
 		 *((int *) optdata) = ld->ld_version;
 		break;
 	case LDAP_OPT_SERVER_CONTROLS:
-		*((LDAPControl ***)optdata) = ld->ld_servercontrols;
-		break;
+		/* fall through */
 	case LDAP_OPT_CLIENT_CONTROLS:
-		*((LDAPControl ***)optdata) = ld->ld_clientcontrols;
+		*((LDAPControl ***)optdata) = NULL;
+		/* nsldapi_dup_controls returns -1 and sets lderrno on error */
+		rc = nsldapi_dup_controls( ld, (LDAPControl ***)optdata,
+		    ( option == LDAP_OPT_SERVER_CONTROLS ) ?
+		    ld->ld_servercontrols : ld->ld_clientcontrols );
 		break;
 
 	/* rebind proc */
@@ -121,18 +179,56 @@ ldap_get_option( LDAP *ld, int option, void *optdata )
 		*((void **) optdata) = ld->ld_rebind_arg;
 		break;
 
-#ifdef LDAP_SSLIO_HOOKS
 	/* i/o function pointers */
 	case LDAP_OPT_IO_FN_PTRS:
-		/* struct copy */
-		*((struct ldap_io_fns *) optdata) = ld->ld_io;
+		if ( ld->ld_io_fns_ptr == NULL ) {
+			memset( optdata, 0, sizeof( struct ldap_io_fns ));
+		} else {
+			/* struct copy */
+			*((struct ldap_io_fns *)optdata) = *(ld->ld_io_fns_ptr);
+		}
 		break;
-#endif /* LDAP_SSLIO_HOOKS */
+
+	/* extended i/o function pointers */
+	case LDAP_X_OPT_EXTIO_FN_PTRS:
+	  if ( ((struct ldap_x_ext_io_fns *) optdata)->lextiof_size == LDAP_X_EXTIO_FNS_SIZE_REV0) {
+	    ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_close = ld->ld_extclose_fn;
+	    ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_connect = ld->ld_extconnect_fn;
+	    ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_read = ld->ld_extread_fn;
+	    ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_write = ld->ld_extwrite_fn;
+	    ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_poll = ld->ld_extpoll_fn;
+	    ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_newhandle = ld->ld_extnewhandle_fn;
+	    ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_disposehandle = ld->ld_extdisposehandle_fn;
+	    ((struct ldap_x_ext_io_fns_rev0 *) optdata)->lextiof_session_arg = ld->ld_ext_session_arg;
+	  } else if ( ((struct ldap_x_ext_io_fns *) optdata)->lextiof_size ==
+		      LDAP_X_EXTIO_FNS_SIZE ) {
+	    /* struct copy */
+	    *((struct ldap_x_ext_io_fns *) optdata) = ld->ld_ext_io_fns;
+	  } else {       
+	    LDAP_SET_LDERRNO( ld, LDAP_PARAM_ERROR, NULL, NULL );
+	    rc = -1;
+	  }
+	  break;
+	  
+	/* get socketargp in extended i/o function */
+	case LDAP_X_OPT_SOCKETARG:
+	  if ( ber_sockbuf_get_option( ld->ld_sbp,LBER_SOCKBUF_OPT_SOCK_ARG, optdata)	    
+		 != 0 ) {
+		LDAP_SET_LDERRNO( ld, LDAP_LOCAL_ERROR, NULL, NULL );
+		rc = -1;
+	   }
+	   	break;
 
 	/* thread function pointers */
 	case LDAP_OPT_THREAD_FN_PTRS:
 		/* struct copy */
 		*((struct ldap_thread_fns *) optdata) = ld->ld_thread;
+		break;
+
+	/* extra thread function pointers */
+	case LDAP_OPT_EXTRA_THREAD_FN_PTRS:
+		/* struct copy */
+		*((struct ldap_extra_thread_fns *) optdata) = ld->ld_thread2;
 		break;
 
 	/* DNS function pointers */
@@ -159,7 +255,14 @@ ldap_get_option( LDAP *ld, int option, void *optdata )
 
 	case LDAP_OPT_ERROR_STRING:
 		(void)LDAP_GET_LDERRNO( ld, NULL, (char **)optdata );
+		*((char **) optdata) = nsldapi_strdup( *((char **) optdata ));
 		break;
+
+	case LDAP_OPT_MATCHED_DN:
+		(void)LDAP_GET_LDERRNO( ld, (char **)optdata, NULL );
+		*((char **) optdata) = nsldapi_strdup( *((char **) optdata ));
+		break;
+
 	case LDAP_OPT_PREFERRED_LANGUAGE:
 		if ( NULL != ld->ld_preferred_language ) {
 			*((char **) optdata) =
@@ -169,12 +272,140 @@ ldap_get_option( LDAP *ld, int option, void *optdata )
 		}
 		break;
 
+	case LDAP_OPT_API_FEATURE_INFO:
+		rc = nsldapi_get_feature_info( (LDAPAPIFeatureInfo *)optdata );
+		if ( rc != LDAP_SUCCESS ) {
+			LDAP_SET_LDERRNO( ld, rc, NULL, NULL );
+			rc = -1;
+		}
+		break;
+
+	case LDAP_OPT_HOST_NAME:
+		*((char **) optdata) = nsldapi_strdup( ld->ld_defhost );
+		break;
+
+        case LDAP_X_OPT_CONNECT_TIMEOUT:
+                *((int *) optdata) = ld->ld_connect_timeout;
+                break;
+
 	default:
 		LDAP_SET_LDERRNO( ld, LDAP_PARAM_ERROR, NULL, NULL );
-		LDAP_MUTEX_UNLOCK( ld, LDAP_OPTION_LOCK );
-		return( -1 );
+		rc = -1;
+	}
+	if (ld != &nsldapi_ld_defaults)
+		LDAP_MUTEX_UNLOCK( ld, LDAP_OPTION_LOCK  );
+	return( rc );
+}
+
+
+/*
+ * Table of extended API features we support.
+ * The first field is the version of the info. strcuture itself; we do not
+ * use the ones from this table so it is okay to leave as zero.
+ */
+static LDAPAPIFeatureInfo nsldapi_extensions[] = {
+    { 0, "SERVER_SIDE_SORT",		LDAP_API_FEATURE_SERVER_SIDE_SORT },
+    { 0, "VIRTUAL_LIST_VIEW",		LDAP_API_FEATURE_VIRTUAL_LIST_VIEW },
+    { 0, "PERSISTENT_SEARCH",		LDAP_API_FEATURE_PERSISTENT_SEARCH },
+    { 0, "PROXY_AUTHORIZATION",		LDAP_API_FEATURE_PROXY_AUTHORIZATION },
+    { 0, "X_LDERRNO",			LDAP_API_FEATURE_X_LDERRNO },
+    { 0, "X_MEMCACHE",			LDAP_API_FEATURE_X_MEMCACHE },
+    { 0, "X_IO_FUNCTIONS",		LDAP_API_FEATURE_X_IO_FUNCTIONS },
+    { 0, "X_EXTIO_FUNCTIONS",		LDAP_API_FEATURE_X_EXTIO_FUNCTIONS },
+    { 0, "X_DNS_FUNCTIONS",		LDAP_API_FEATURE_X_DNS_FUNCTIONS },
+    { 0, "X_MEMALLOC_FUNCTIONS",	LDAP_API_FEATURE_X_MEMALLOC_FUNCTIONS },
+    { 0, "X_THREAD_FUNCTIONS",		LDAP_API_FEATURE_X_THREAD_FUNCTIONS },
+    { 0, "X_EXTHREAD_FUNCTIONS",	LDAP_API_FEATURE_X_EXTHREAD_FUNCTIONS },
+    { 0, "X_GETLANGVALUES",		LDAP_API_FEATURE_X_GETLANGVALUES },
+    { 0, "X_CLIENT_SIDE_SORT",		LDAP_API_FEATURE_X_CLIENT_SIDE_SORT },
+    { 0, "X_URL_FUNCTIONS",		LDAP_API_FEATURE_X_URL_FUNCTIONS },
+    { 0, "X_FILTER_FUNCTIONS",		LDAP_API_FEATURE_X_FILTER_FUNCTIONS },
+};
+
+#define NSLDAPI_EXTENSIONS_COUNT	\
+	(sizeof(nsldapi_extensions)/sizeof(LDAPAPIFeatureInfo))
+
+/*
+ * Retrieve information about this implementation of the LDAP API.
+ * Returns an LDAP error code.
+ */
+static int
+nsldapi_get_api_info( LDAPAPIInfo *aip )
+{
+	int	i;
+
+	if ( aip == NULL ) {
+		return( LDAP_PARAM_ERROR );
 	}
 
-	LDAP_MUTEX_UNLOCK( ld, LDAP_OPTION_LOCK  );
-	return( 0 );
+	aip->ldapai_api_version = LDAP_API_VERSION;
+
+	if ( aip->ldapai_info_version != LDAP_API_INFO_VERSION ) {
+		aip->ldapai_info_version = LDAP_API_INFO_VERSION;
+		return( LDAP_PARAM_ERROR );
+	}
+
+	aip->ldapai_protocol_version = LDAP_VERSION_MAX;
+	aip->ldapai_vendor_version = LDAP_VENDOR_VERSION;
+
+	if (( aip->ldapai_vendor_name = nsldapi_strdup( LDAP_VENDOR_NAME ))
+	    == NULL ) {
+		return( LDAP_NO_MEMORY );
+	}
+
+	if ( NSLDAPI_EXTENSIONS_COUNT < 1 ) {
+		aip->ldapai_extensions = NULL;
+	} else {
+		if (( aip->ldapai_extensions = NSLDAPI_CALLOC(
+		    NSLDAPI_EXTENSIONS_COUNT + 1, sizeof(char *))) == NULL ) {
+			NSLDAPI_FREE( aip->ldapai_vendor_name );
+			aip->ldapai_vendor_name = NULL;
+			return( LDAP_NO_MEMORY );
+		}
+
+		for ( i = 0; i < NSLDAPI_EXTENSIONS_COUNT; ++i ) {
+			if (( aip->ldapai_extensions[i] = nsldapi_strdup(
+			    nsldapi_extensions[i].ldapaif_name )) == NULL ) {
+				ldap_value_free( aip->ldapai_extensions );
+				NSLDAPI_FREE( aip->ldapai_vendor_name );
+				aip->ldapai_extensions = NULL;
+				aip->ldapai_vendor_name = NULL;
+				return( LDAP_NO_MEMORY );
+			}
+		}
+	}
+
+	return( LDAP_SUCCESS );
+}
+
+
+/*
+ * Retrieves information about a specific extended feature of the LDAP API/
+ * Returns an LDAP error code.
+ */
+static int
+nsldapi_get_feature_info( LDAPAPIFeatureInfo *fip )
+{
+	int	i;
+
+	if ( fip == NULL || fip->ldapaif_name == NULL ) {
+		return( LDAP_PARAM_ERROR );
+	}
+
+	if ( fip->ldapaif_info_version != LDAP_FEATURE_INFO_VERSION ) {
+		fip->ldapaif_info_version = LDAP_FEATURE_INFO_VERSION;
+		return( LDAP_PARAM_ERROR );
+	}
+
+	for ( i = 0; i < NSLDAPI_EXTENSIONS_COUNT; ++i ) {
+		if ( strcmp( fip->ldapaif_name,
+		    nsldapi_extensions[i].ldapaif_name ) == 0 ) {
+			fip->ldapaif_version =
+			    nsldapi_extensions[i].ldapaif_version;
+			break;
+		}
+	}
+
+	return(( i < NSLDAPI_EXTENSIONS_COUNT ) ? LDAP_SUCCESS
+	    : LDAP_PARAM_ERROR );
 }

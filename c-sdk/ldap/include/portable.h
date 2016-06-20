@@ -1,3 +1,40 @@
+/* ***** BEGIN LICENSE BLOCK *****
+ * Version: MPL 1.1/GPL 2.0/LGPL 2.1
+ * 
+ * The contents of this file are subject to the Mozilla Public License Version 
+ * 1.1 (the "License"); you may not use this file except in compliance with 
+ * the License. You may obtain a copy of the License at 
+ * http://www.mozilla.org/MPL/
+ * 
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+ * for the specific language governing rights and limitations under the
+ * License.
+ * 
+ * The Original Code is Mozilla Communicator client code, released
+ * March 31, 1998.
+ * 
+ * The Initial Developer of the Original Code is
+ * Netscape Communications Corporation.
+ * Portions created by the Initial Developer are Copyright (C) 1998-1999
+ * the Initial Developer. All Rights Reserved.
+ * 
+ * Contributor(s):
+ * 
+ * Alternatively, the contents of this file may be used under the terms of
+ * either of the GNU General Public License Version 2 or later (the "GPL"),
+ * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+ * in which case the provisions of the GPL or the LGPL are applicable instead
+ * of those above. If you wish to allow use of your version of this file only
+ * under the terms of either the GPL or the LGPL, and not to allow others to
+ * use your version of this file under the terms of the MPL, indicate your
+ * decision by deleting the provisions above and replace them with the notice
+ * and other provisions required by the GPL or the LGPL. If you do not delete
+ * the provisions above, a recipient may use your version of this file under
+ * the terms of any one of the MPL, the GPL or the LGPL.
+ * 
+ * ***** END LICENSE BLOCK ***** */
+
 /*
  * Copyright (c) 1994 Regents of the University of Michigan.
  * All rights reserved.
@@ -22,7 +59,7 @@
  */
 
 #ifndef SYSV
-#if defined( hpux ) || defined( sunos5 ) || defined ( sgi ) || defined( SVR4 )
+#if defined( hpux ) || defined( SOLARIS ) || defined ( sgi ) || defined( SVR4 )
 #define SYSV
 #endif
 #endif
@@ -73,15 +110,6 @@
 #endif
 
 /*
- * define the flags for wait
- */
-#ifdef sunos5
-#define WAIT_FLAGS	( WNOHANG | WUNTRACED | WCONTINUED )
-#else
-#define WAIT_FLAGS	( WNOHANG | WUNTRACED )
-#endif
-
-/*
  * defined the options for openlog (syslog)
  */
 #ifdef ultrix
@@ -94,7 +122,7 @@
  * some systems don't have the BSD re_comp and re_exec routines
  */
 #ifndef NEED_BSDREGEX
-#if ( defined( SYSV ) || defined( VMS ) || defined( netbsd ) || defined( freebsd ) || defined( linux )) && !defined(sgi)
+#if ( defined( SYSV ) || defined( NETBSD ) || defined( freebsd ) || defined( linux ) || defined( DARWIN )) && !defined(sgi)
 #define NEED_BSDREGEX
 #endif
 #endif
@@ -118,11 +146,32 @@
 #endif
 #endif
 
+
+/*
+ * Is snprintf() part of the standard C runtime library?
+ */
+#if !defined(HAVE_SNPRINTF)
+#if defined(SOLARIS) || defined(LINUX) || defined(HPUX) || defined(AIX)
+#define HAVE_SNPRINTF
+#endif
+#endif
+
+
+/*
+ * Async IO.  Use a non blocking implementation of connect() and 
+ * dns functions
+ */
+#if !defined(LDAP_ASYNC_IO)
+#if !defined(_WINDOWS) && !defined(macintosh)
+#define LDAP_ASYNC_IO
+#endif /* _WINDOWS */
+#endif
+
 /*
  * for select()
  */
 #if !defined(WINSOCK) && !defined(_WINDOWS) && !defined(macintosh) && !defined(XP_OS2)
-#if defined(hpux) || defined(LINUX2_0)
+#if defined(hpux) || defined(LINUX) || defined(SUNOS4) || defined(XP_BEOS)
 #include <sys/time.h>
 #else
 #include <sys/select.h>
@@ -142,31 +191,21 @@
  * for connect() -- must we block signals when calling connect()?  This
  * is necessary on some buggy UNIXes.
  */
-#if !defined(LDAP_CONNECT_MUST_NOT_BE_INTERRUPTED) && \
+#if !defined(NSLDAPI_CONNECT_MUST_NOT_BE_INTERRUPTED) && \
 	( defined(AIX) || defined(IRIX) || defined(HPUX) || defined(SUNOS4) \
-	|| defined(SOLARIS))
-#define LDAP_CONNECT_MUST_NOT_BE_INTERRUPTED
+	|| defined(SOLARIS) || defined(OSF1) ||defined(freebsd)) 
+#define NSLDAPI_CONNECT_MUST_NOT_BE_INTERRUPTED
 #endif
 
-
 /*
- * for signal() -- what do signal handling functions return?
+ * On most platforms, sigprocmask() works fine even in multithreaded code.
+ * But not everywhere.
  */
-#ifndef SIG_FN
-#ifdef sunos5
-#   define SIG_FN void          /* signal-catching functions return void */
-#else /* sunos5 */
-# ifdef BSD
-#  if (BSD >= 199006) || defined(NeXT) || defined(OSF1) || defined(sun) || defined(ultrix) || defined(apollo) || defined(POSIX_SIGNALS)
-#   define SIG_FN void          /* signal-catching functions return void */
-#  else
-#   define SIG_FN int           /* signal-catching functions return int */
-#  endif
-# else /* BSD */
-#  define SIG_FN void           /* signal-catching functions return void */
-# endif /* BSD */
-#endif /* sunos5 */
-#endif /* SIG_FN */
+#ifdef AIX
+#define NSLDAPI_MT_SAFE_SIGPROCMASK(h,s,o)	sigthreadmask(h,s,o)
+#else
+#define NSLDAPI_MT_SAFE_SIGPROCMASK(h,s,o)	sigprocmask(h,s,o)
+#endif
 
 /*
  * toupper and tolower macros are different under bsd and sys v
@@ -204,11 +243,6 @@
 #define HAVE_TIME_R
 #endif
 
-#if defined( sunos5 ) || defined( aix )
-#define HAVE_GETPWNAM_R
-#define HAVE_GETGRNAM_R
-#endif
-
 #if defined(SNI) || defined(LINUX1_2)
 int strcasecmp(const char *, const char *);
 #ifdef SNI
@@ -219,16 +253,30 @@ int strncasecmp(const char *, const char *, size_t);
 #endif /* LINUX1_2 */
 #endif /* SNI || LINUX1_2 */
 
-#if defined(_WINDOWS) || defined(macintosh) || defined(XP_OS2)
+#if defined(_WINDOWS) || defined(macintosh) || defined(XP_OS2) || defined(DARWIN)
 #define GETHOSTBYNAME( n, r, b, l, e )  gethostbyname( n )
-#define CTIME( c, b, l )		ctime( c )
+#define NSLDAPI_CTIME( c, b, l )	ctime( c )
 #define STRTOK( s1, s2, l )		strtok( s1, s2 )
+#elif defined(XP_BEOS)
+#define GETHOSTBYNAME( n, r, b, l, e )  gethostbyname( n )
+#define NSLDAPI_CTIME( c, b, l )                ctime_r( c, b )
+#define STRTOK( s1, s2, l )		strtok_r( s1, s2, l )
+#define HAVE_STRTOK_R
 #else /* UNIX */
-#if defined(sgi) || defined(HPUX9) || defined(LINUX1_2) || defined(SCOOS) || \
+#if (defined(AIX) && defined(_THREAD_SAFE)) || defined(OSF1)
+#define NSLDAPI_NETDB_BUF_SIZE	 sizeof(struct protoent_data) 
+#else
+#define NSLDAPI_NETDB_BUF_SIZE	1024
+#endif
+
+#if defined(sgi) || defined(HPUX9) || defined(SCOOS) || \
     defined(UNIXWARE) || defined(SUNOS4) || defined(SNI) || defined(BSDI) || \
-    defined(NCR) || defined(OSF1) || defined(NEC) || \
+    defined(NCR) || defined(OSF1) || defined(NEC) || defined(VMS) || \
     ( defined(HPUX10) && !defined(_REENTRANT)) || defined(HPUX11) || \
-    defined(UnixWare) || defined(LINUX2_0)
+    defined(UnixWare) || defined(NETBSD) || \
+    defined(FREEBSD) || defined(OPENBSD) || \
+    (defined(LINUX) && __GLIBC__ < 2) || \
+    (defined(AIX) && !defined(USE_REENTRANT_LIBC))
 #define GETHOSTBYNAME( n, r, b, l, e )  gethostbyname( n )
 #elif defined(AIX)
 /* Maybe this is for another version of AIX?
@@ -236,40 +284,52 @@ int strncasecmp(const char *, const char *, size_t);
    Replaced with following to lines, stolen from the #else below
 #define GETHOSTBYNAME_BUF_T struct hostent_data
 */
-typedef char GETHOSTBYNAME_buf_t [BUFSIZ /* XXX might be too small */];
+typedef char GETHOSTBYNAME_buf_t [NSLDAPI_NETDB_BUF_SIZE];
 #define GETHOSTBYNAME_BUF_T GETHOSTBYNAME_buf_t
 #define GETHOSTBYNAME( n, r, b, l, e ) \
 	(memset (&b, 0, l), gethostbyname_r (n, r, &b) ? NULL : r)
 #elif defined(HPUX10)
 #define GETHOSTBYNAME_BUF_T struct hostent_data
 #define GETHOSTBYNAME( n, r, b, l, e )	nsldapi_compat_gethostbyname_r( n, r, (char *)&b, l, e )
+#elif defined(LINUX)
+typedef char GETHOSTBYNAME_buf_t [NSLDAPI_NETDB_BUF_SIZE];
+#define GETHOSTBYNAME_BUF_T GETHOSTBYNAME_buf_t
+#define GETHOSTBYNAME( n, r, b, l, rp, e )  gethostbyname_r( n, r, b, l, rp, e )
+#define GETHOSTBYNAME_R_RETURNS_INT
 #else
-#include <stdio.h> /* BUFSIZ */
-typedef char GETHOSTBYNAME_buf_t [BUFSIZ /* XXX might be too small */];
+typedef char GETHOSTBYNAME_buf_t [NSLDAPI_NETDB_BUF_SIZE];
 #define GETHOSTBYNAME_BUF_T GETHOSTBYNAME_buf_t
 #define GETHOSTBYNAME( n, r, b, l, e )  gethostbyname_r( n, r, b, l, e )
 #endif
-#if defined(HPUX9) || defined(LINUX1_2) || defined(SUNOS4) || defined(SNI) || \
+#if defined(HPUX9) || defined(LINUX1_2) || defined(LINUX2_0) || \
+    defined(LINUX2_1) || defined(SUNOS4) || defined(SNI) || \
     defined(SCOOS) || defined(BSDI) || defined(NCR) || \
-    defined(NEC) || ( defined(HPUX10) && !defined(_REENTRANT)) 
-#define CTIME( c, b, l )		ctime( c )
-#elif defined(HPUX10) && defined(_REENTRANT)
-#define CTIME( c, b, l )		nsldapi_compat_ctime_r( c, b, l )
+    defined(NEC) || ( defined(HPUX10) && !defined(_REENTRANT)) || \
+    (defined(AIX) && !defined(USE_REENTRANT_LIBC))
+#define NSLDAPI_CTIME( c, b, l )	ctime( c )
+#elif defined(HPUX10) && defined(_REENTRANT) && !defined(HPUX11)
+#define NSLDAPI_CTIME( c, b, l )	nsldapi_compat_ctime_r( c, b, l )
 #elif defined( IRIX6_2 ) || defined( IRIX6_3 ) || defined(UNIXWARE) \
-	|| defined(OSF1V4) || defined(AIX) || defined(UnixWare) || defined(hpux)
-#define CTIME( c, b, l )                ctime_r( c, b )
+	|| defined(OSF1V4) || defined(AIX) || defined(UnixWare) \
+        || defined(hpux) || defined(HPUX11) || defined(NETBSD) \
+        || defined(IRIX6) || defined(FREEBSD) || defined(VMS) \
+        || defined(NTO) || defined(OPENBSD)
+#define NSLDAPI_CTIME( c, b, l )        ctime_r( c, b )
 #elif defined( OSF1V3 )
-#define CTIME( c, b, l )		(ctime_r( c, b, l ) ? NULL : b)
+#define NSLDAPI_CTIME( c, b, l )	(ctime_r( c, b, l ) ? NULL : b)
 #else
-#define CTIME( c, b, l )		ctime_r( c, b, l )
+#define NSLDAPI_CTIME( c, b, l )	ctime_r( c, b, l )
 #endif
-#if defined(hpux9) || defined(LINUX1_2) || defined(SUNOS4) || defined(SNI) || \
-    defined(SCOOS) || defined(BSDI) || defined(NCR) || \
-    defined(NEC) || defined(LINUX2_0)
+#if defined(hpux9) || defined(SUNOS4) || defined(SNI) || \
+    defined(SCOOS) || defined(BSDI) || defined(NCR) || defined(VMS) || \
+    defined(NEC) || (defined(LINUX) && __GNU_LIBRARY__ != 6) || \
+    (defined(AIX) && !defined(USE_REENTRANT_LIBC))
 #define STRTOK( s1, s2, l )		strtok( s1, s2 )
 #else
 #define HAVE_STRTOK_R
+#ifndef strtok_r
 char *strtok_r(char *, const char *, char **);
+#endif
 #define STRTOK( s1, s2, l )		(char *)strtok_r( s1, s2, l )
 #endif /* STRTOK */
 #endif /* UNIX */
@@ -282,10 +342,37 @@ extern char *strdup();
 #define	BSD_TIME	1	/* for servers/slapd/log.h */
 #endif /* sunos4 || osf */
 
-#ifdef SOLARIS
+#if defined(XP_OS2)
+#include <machine/endian.h>   /* for htonl, et.al. */
+#include <arpa/inet.h>	      /* for inet_addr() */
+#elif !defined(_WINDOWS) && !defined(macintosh)
 #include <netinet/in.h>
+#if !defined(XP_BEOS)
 #include <arpa/inet.h>	/* for inet_addr() */
-#endif /* SOLARIS */
+#endif
+#endif
+
+
+/*
+ * Define portable 32-bit integral types.
+ */
+#include <limits.h>
+#if UINT_MAX >= 0xffffffffU	/* an int holds at least 32 bits */
+    typedef signed int nsldapi_int_32;
+    typedef unsigned int nsldapi_uint_32;
+#else				/* ints are < 32 bits; use long instead */
+    typedef signed long nsldapi_int_32;
+    typedef unsigned long nsldapi_uint_32;
+#endif
+
+/*
+ * Define a portable type for IPv4 style Internet addresses (32 bits):
+ */
+#if defined(_IN_ADDR_T) || defined(aix) || defined(HPUX11) || defined(OSF1)
+typedef in_addr_t	nsldapi_in_addr_t;
+#else
+typedef nsldapi_uint_32	nsldapi_in_addr_t;
+#endif
 
 #ifdef SUNOS4
 #include <pcfs/pc_dir.h>	/* for toupper() */
@@ -302,7 +389,7 @@ time_t time(time_t *);
 void perror(char *);
 int fputc(char, FILE *);
 int fputs(char *, FILE *);
-int LDAP_CALL re_exec(char *);
+int re_exec(char *);
 int socket(int, int, int);
 void bzero(char *, int);
 unsigned long inet_addr(char *);
@@ -346,17 +433,25 @@ int select(int, fd_set *, fd_set *, fd_set *, struct timeval *);
 #define MAXPATHLEN _MAX_PATH
 #endif
 
-#define DS_MAX_NT_SOCKET_CONNECTIONS 2000
+/* We'd like this number to be prime for the hash
+ * into the Connection table */
+#define DS_MAX_NT_SOCKET_CONNECTIONS 2003
 
 #elif defined(XP_OS2)
 
-#define strcasecmp strcmpi
+#define strcasecmp stricmp
 #define strncasecmp strnicmp
 #define bzero(a, b) memset( a, 0, b )
-#include "dirent.h"
 #include <string.h> /*for strcmpi()*/
 #include <time.h>   /*for ctime()*/
 
+#endif /* XP_OS2 */
+
+/* Define a macro to support large files */
+#ifdef _LARGEFILE64_SOURCE
+#define NSLDAPI_FOPEN( filename, mode )	fopen64( filename, mode )
+#else
+#define NSLDAPI_FOPEN( filename, mode )	fopen( filename, mode )
 #endif
 
 #endif /* _PORTABLE_H */

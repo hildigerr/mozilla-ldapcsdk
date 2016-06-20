@@ -1,20 +1,40 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
- * The contents of this file are subject to the Netscape Public License
- * Version 1.0 (the "NPL"); you may not use this file except in
- * compliance with the NPL.  You may obtain a copy of the NPL at
- * http://www.mozilla.org/NPL/
- *
- * Software distributed under the NPL is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the NPL
+/* ***** BEGIN LICENSE BLOCK *****
+ * Version: MPL 1.1/GPL 2.0/LGPL 2.1
+ * 
+ * The contents of this file are subject to the Mozilla Public License Version 
+ * 1.1 (the "License"); you may not use this file except in compliance with 
+ * the License. You may obtain a copy of the License at 
+ * http://www.mozilla.org/MPL/
+ * 
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
  * for the specific language governing rights and limitations under the
- * NPL.
- *
- * The Initial Developer of this code under the NPL is Netscape
- * Communications Corporation.  Portions created by Netscape are
- * Copyright (C) 1998 Netscape Communications Corporation.  All Rights
- * Reserved.
- */
+ * License.
+ * 
+ * The Original Code is Mozilla Communicator client code, released
+ * March 31, 1998.
+ * 
+ * The Initial Developer of the Original Code is
+ * Netscape Communications Corporation.
+ * Portions created by the Initial Developer are Copyright (C) 1998-1999
+ * the Initial Developer. All Rights Reserved.
+ * 
+ * Contributor(s):
+ * 
+ * Alternatively, the contents of this file may be used under the terms of
+ * either of the GNU General Public License Version 2 or later (the "GPL"),
+ * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+ * in which case the provisions of the GPL or the LGPL are applicable instead
+ * of those above. If you wish to allow use of your version of this file only
+ * under the terms of either the GPL or the LGPL, and not to allow others to
+ * use your version of this file under the terms of the MPL, indicate your
+ * decision by deleting the provisions above and replace them with the notice
+ * and other provisions required by the GPL or the LGPL. If you do not delete
+ * the provisions above, a recipient may use your version of this file under
+ * the terms of any one of the MPL, the GPL or the LGPL.
+ * 
+ * ***** END LICENSE BLOCK ***** */
+
 /* test.c - a simple test harness. */
 #include <stdio.h>
 #include <ctype.h>
@@ -54,19 +74,20 @@
 #endif /* DOS */
 #endif /* MACOS */
 
-#undef NET_SSL
-
-#if defined(NET_SSL)
-#include <sec.h>
-static SECCertDBHandle        certdbhandle;
-#endif
-
 #include "ldap.h"
 #include "disptmpl.h"
 #include "ldaplog.h"
+#include "portable.h"
 #ifndef NO_LIBLCACHE
 #include "lcache.h"
 #endif /* !NO_LIBLCACHE */
+
+#undef NET_SSL
+#if defined(NET_SSL)
+#include <nss.h>
+#include <ldap_ssl.h>
+#endif
+
 
 #if !defined( PCNFS ) && !defined( WINSOCK ) && !defined( MACOS )
 #define MOD_USE_BVALS
@@ -83,6 +104,7 @@ static void free_list( char **list );
 static int entry2textwrite( void *fp, char *buf, int len );
 static void bprint( char *data, int len );
 static char **string2words( char *str, char *delims );
+static const char * url_parse_err2string( int e );
 
 char *dnsuffix;
 
@@ -155,7 +177,7 @@ file_read( char *path, struct berval *bv )
 	long		rlen;
 	int		eof;
 
-	if (( fp = fopen( path, "r" )) == NULL ) {
+	if (( fp = NSLDAPI_FOPEN( path, "r" )) == NULL ) {
 	    	perror( path );
 		return( -1 );
 	}
@@ -184,7 +206,7 @@ file_read( char *path, struct berval *bv )
 	eof = feof( fp );
 	fclose( fp );
 
-	if ( rlen != bv->bv_len ) {
+	if ( (unsigned long)rlen != bv->bv_len ) {
 		perror( path );
 		free( bv->bv_val );
 		return( -1 );
@@ -272,7 +294,7 @@ get_modlist( char *prompt1, char *prompt2, char *prompt3 )
 }
 
 
-int
+int LDAP_CALL LDAP_CALLBACK
 bind_prompt( LDAP *ld, char **dnp, char **passwdp, int *authmethodp,
 	int freeit, void *dummy )
 {
@@ -308,12 +330,13 @@ bind_prompt( LDAP *ld, char **dnp, char **passwdp, int *authmethodp,
 }
 
 
-#define HEX2BIN( h )	( (h) >= '0' && (h) <='0' ? (h) - '0' : (h) - 'A' + 10 )
+#define HEX2BIN( h )	( (h) >= '0' && (h) <='9' ? (h) - '0' : (h) - 'A' + 10 )
 
 void
 berval_from_hex( struct berval *bvp, char *hexstr )
 {
-    char	*src, *dst, c, abyte;
+    char	*src, *dst, c;
+	unsigned char abyte;
 
     dst = bvp->bv_val;
     bvp->bv_len = 0;
@@ -515,8 +538,10 @@ main(
 	dnsuffix = "";
 	cldapflg = errflg = 0;
 	ldapversion = 0;	/* use default */
+#ifndef _WIN32
 #ifdef LDAP_DEBUG
 	ldap_debug = LDAP_DEBUG_ANY;
+#endif
 #endif
 
 	while (( c = getopt( argc, argv, "uh:d:s:p:t:T:V:" )) != -1 ) {
@@ -530,13 +555,16 @@ main(
 			break;
 
 		case 'd':
+#ifndef _WIN32
 #ifdef LDAP_DEBUG
 			ldap_debug = atoi( optarg ) | LDAP_DEBUG_ANY;
 			if ( ldap_debug & LDAP_DEBUG_PACKETS ) {
-				lber_debug = ldap_debug;
+				ber_set_option( NULL, LBER_OPT_DEBUG_LEVEL,
+					&ldap_debug );
 			}
 #else
 			printf( "Compile with -DLDAP_DEBUG for debugging\n" );
+#endif
 #endif
 			break;
 
@@ -791,9 +819,13 @@ main(
 
 			getline( oid, sizeof(oid), stdin, "oid? " );
 			getline( value, sizeof(value), stdin, "value? " );
-
-			val.bv_val = value;
-			val.bv_len = strlen( value );
+			if ( strncmp( value, "0x", 2 ) == 0 ) {
+				val.bv_val = (char *)malloc( strlen( value ) / 2 );
+				berval_from_hex( &val, value + 2 );
+			} else {
+				val.bv_val = strdup( value );
+				val.bv_len = strlen( value );
+			}
 			if ( ldap_extended_operation( ld, oid, &val, NULL,
 			    NULL, &id ) != LDAP_SUCCESS ) {
 				ldap_perror( ld, "ldap_extended_operation" );
@@ -801,6 +833,7 @@ main(
 				printf( "Extended op initiated with id %d\n",
 				    id );
 			}
+			free( val.bv_val );
 			}
 			break;
 
@@ -884,14 +917,17 @@ main(
 			break;
 
 		case 'd':	/* turn on debugging */
+#ifndef _WIN32
 #ifdef LDAP_DEBUG
 			getline( line, sizeof(line), stdin, "debug level? " );
 			ldap_debug = atoi( line ) | LDAP_DEBUG_ANY;
 			if ( ldap_debug & LDAP_DEBUG_PACKETS ) {
-				lber_debug = ldap_debug;
+				ber_set_option( NULL, LBER_OPT_DEBUG_LEVEL,
+					&ldap_debug );
 			}
 #else
 			printf( "Compile with -DLDAP_DEBUG for debugging\n" );
+#endif
 #endif
 			break;
 
@@ -1089,7 +1125,8 @@ main(
 		case 'p':	/* parse LDAP URL */
 			getline( line, sizeof(line), stdin, "LDAP URL? " );
 			if (( i = ldap_url_parse( line, &ludp )) != 0 ) {
-			    fprintf( stderr, "ldap_url_parse: error %d\n", i );
+			    fprintf( stderr, "ldap_url_parse: error %d (%s)\n", i,
+						url_parse_err2string( i ));
 			} else {
 			    printf( "\t  host: " );
 			    if ( ludp->lud_host == NULL ) {
@@ -1103,10 +1140,8 @@ main(
 			    } else {
 				printf( "%d\n", ludp->lud_port );
 			    }
-#if defined(NET_SSL)
 			    printf( "\tsecure: %s\n", ( ludp->lud_options &
 				    LDAP_URL_OPT_SECURE ) != 0 ? "Yes" : "No" );
-#endif
 			    printf( "\t    dn: " );
 			    if ( ludp->lud_dn == NULL ) {
 				printf( "ROOT\n" );
@@ -1182,7 +1217,7 @@ main(
 				"Critical (0=no, 1=yes)? " );
 			if ( ldap_create_persistentsearch_control( ld,
 			    changetypes, changesonly, return_echg_ctls,
-			    atoi(line), &newctrl ) != LDAP_SUCCESS ) {
+			    (char)atoi(line), &newctrl ) != LDAP_SUCCESS ) {
 				ldap_perror( ld, "ldap_create_persistent"
 				    "search_control" );
 			} else {
@@ -1253,7 +1288,7 @@ main(
 				getline( line, sizeof(line), stdin,
 				    "security DB path?" ); 
 				if ( ldapssl_client_init( (*line == '\0') ?
-				    NULL : line, &certdbhandle ) < 0 ) {
+				    NULL : line, NULL ) < 0 ) {
 					perror( "ldapssl_client_init" );
 					optval = 0;     /* SSL not avail. */
 				} else if ( ldapssl_install_routines( ld )
@@ -1264,14 +1299,38 @@ main(
 				}
 			}
 
-#ifdef LDAP_SSLIO_HOOKS
 			ldap_set_option( ld, LDAP_OPT_SSL,
 			    optval ? LDAP_OPT_ON : LDAP_OPT_OFF );
-#endif
+
+			getline( line, sizeof(line), stdin,
+				"Set SSL options (0=no, 1=yes)?" );
+			optval = ( atoi( line ) != 0 );
+			while ( 1 ) {
+			    PRInt32 sslopt;
+			    PRBool  on;
+
+			    getline( line, sizeof(line), stdin,
+				    "Option to set (0 if done)?" );
+			    sslopt = atoi(line);
+			    if ( sslopt == 0 ) {
+				break;
+			    }
+			    getline( line, sizeof(line), stdin,
+				    "On=1, Off=0?" );
+			    on = ( atoi( line ) != 0 );
+			    if ( ldapssl_set_option( ld, sslopt, on ) != 0 ) {
+				ldap_perror( ld, "ldapssl_set_option" );
+			    }
+			}
 #endif
 
 			getline( line, sizeof(line), stdin, "Reconnect?" );
 			ldap_set_option( ld, LDAP_OPT_RECONNECT,
+			    ( atoi( line ) == 0 ) ? LDAP_OPT_OFF :
+			    LDAP_OPT_ON );
+
+			getline( line, sizeof(line), stdin, "Async I/O?" );
+			ldap_set_option( ld, LDAP_OPT_ASYNC_CONNECT,
 			    ( atoi( line ) == 0 ) ? LDAP_OPT_OFF :
 			    LDAP_OPT_ON );
 			break;
@@ -1426,8 +1485,13 @@ handle_result( LDAP *ld, LDAPMessage *lm, int onlyone )
 		print_ldap_result( ld, lm, "bind" );
 		break;
 	case LDAP_RES_EXTENDED:
-		printf( "ExtendedOp result\n" );
-		print_ldap_result( ld, lm, "extendedop" );
+		if ( ldap_msgid( lm ) == LDAP_RES_UNSOLICITED ) {
+			printf( "Unsolicited result\n" );
+			print_ldap_result( ld, lm, "unsolicited" );
+		} else {
+			printf( "ExtendedOp result\n" );
+			print_ldap_result( ld, lm, "extendedop" );
+		}
 		break;
 
 	default:
@@ -1443,7 +1507,7 @@ handle_result( LDAP *ld, LDAPMessage *lm, int onlyone )
 static void
 print_ldap_result( LDAP *ld, LDAPMessage *lm, char *s )
 {
-	int		i, lderr;
+	int		lderr;
 	char		*matcheddn, *errmsg, *oid, **refs;
 	LDAPControl	**ctrls;
 	struct berval	*servercred, *data;
@@ -1490,11 +1554,18 @@ print_ldap_result( LDAP *ld, LDAPMessage *lm, char *s )
 	    ldap_parse_extended_result( ld, lm, &oid, &data, 0 ) ==
 	    LDAP_SUCCESS ) {
 		if ( oid != NULL ) {
-			printf( "\tExtendedOp OID: %s\n", oid );
+			if ( strcmp ( oid, LDAP_NOTICE_OF_DISCONNECTION )
+			    == 0 ) {
+				printf(
+				    "\t%s Notice of Disconnection (OID: %s)\n",
+				    s, oid );
+			} else {
+				printf( "\t%s OID: %s\n", s, oid );
+			}
 			ldap_memfree( oid );
 		}
 		if ( data != NULL ) {
-			fputs( "\tExtendedOp data:\n", stderr );
+			printf( "\t%s data:\n", s );
 			bprint( data->bv_val, data->bv_len );
 			ber_bvfree( data );
 		}
@@ -1507,7 +1578,7 @@ print_search_entry( LDAP *ld, LDAPMessage *res, int onlyone )
 	BerElement	*ber;
 	char		*a, *dn, *ufn;
 	struct berval	**vals;
-	int		i, count, msgtype;
+	int		i, count;
 	LDAPMessage	*e, *msg;
 	LDAPControl	**ectrls;
 
@@ -1542,9 +1613,9 @@ print_search_entry( LDAP *ld, LDAPMessage *res, int onlyone )
 				printf( "\t\t\t(no values)\n" );
 			} else {
 				for ( i = 0; vals[i] != NULL; i++ ) {
-					int	j, nonascii;
+					int		nonascii = 0;
+					unsigned long	j;
 
-					nonascii = 0;
 					for ( j = 0; j < vals[i]->bv_len; j++ )
 						if ( !isascii( vals[i]->bv_val[j] ) ) {
 							nonascii = 1;
@@ -1627,6 +1698,7 @@ changetype_num2string( int chgtype )
 	s = "moddn";
 	break;
     default:
+	s = buf;
 	sprintf( s, "unknown (%d)", chgtype );
     }
 
@@ -1745,6 +1817,36 @@ string2words( char *str, char *delims )
     }
 
     return( words );
+}
+
+
+static const char *
+url_parse_err2string( int e )
+{
+    const char	*s = "unknown";
+
+    switch( e ) {
+    case LDAP_URL_ERR_NOTLDAP:
+	s = "URL doesn't begin with \"ldap://\"";
+	break;
+    case LDAP_URL_ERR_NODN:
+	s = "URL has no DN (required)";
+	break;
+    case LDAP_URL_ERR_BADSCOPE:
+	s = "URL scope string is invalid";
+	break;
+    case LDAP_URL_ERR_MEM:
+	s = "can't allocate memory space";
+	break;
+    case LDAP_URL_ERR_PARAM:
+	s = "bad parameter to an URL function";
+	break;
+    case LDAP_URL_UNRECOGNIZED_CRITICAL_EXTENSION:
+	s = "unrecognized critical URL extension";
+	break;
+    }
+
+    return( s );
 }
 
 
