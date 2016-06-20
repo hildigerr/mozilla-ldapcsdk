@@ -175,10 +175,6 @@ include $(MOD_DEPTH)/config/$(OS_TARGET).mk
 BUILD		= $(OBJDIR_NAME)
 OBJDIR		= $(OBJDIR_NAME)
 DIST		= $(NSDEPTH)/dist/$(OBJDIR_NAME)
-ifeq ($(MOZ_BITS),16)
-MOZ_INCL	= $(NSDEPTH)/dist/public/win16
-MOZ_DIST	= $(NSDEPTH)/dist/WIN16D_D.OBJ
-endif
 
 VPATH		= $(OBJDIR)
 DEPENDENCIES	= $(OBJDIR)/.md
@@ -211,10 +207,6 @@ endif
 
 ifeq ($(USE_IPV6),1)
 OS_CFLAGS += -D_PR_INET6
-endif
-
-ifdef GC_LEAK_DETECTOR
-OS_CFLAGS += -DGC_LEAK_DETECTOR
 endif
 
 ####################################################################
