@@ -5,7 +5,7 @@
 
 dnl AM_PATH_NSPR([MINIMUM-VERSION, [ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND]]])
 dnl Test for system NSPR, and define NSPR_CFLAGS and NSPR_LIBS
-AC_DEFUN(AM_PATH_NSPR,
+AC_DEFUN([AM_PATH_NSPR],
 [dnl
 
 AC_ARG_WITH(nspr-prefix,
@@ -136,7 +136,7 @@ AC_DEFUN(AM_PATH_GIVEN_NSPR,
         elif test "$withval" = "yes" ; then
             AC_MSG_RESULT(yes)
             no_nspr="no"
-        elif test -e "$withval"/include/nspr.h -a -d "$withval"/lib
+        elif test -f "$withval"/include/nspr.h -a -d "$withval"/lib
         then
             AC_MSG_RESULT([using $withval])
             NSPR_CFLAGS="-I$withval/include"
@@ -152,7 +152,7 @@ AC_DEFUN(AM_PATH_GIVEN_NSPR,
     AC_MSG_CHECKING(for --with-nspr-inc)
     AC_ARG_WITH(nspr-inc, [  --with-nspr-inc=PATH        Netscape Portable Runtime (NSPR) include file directory],
     [
-      if test -e "$withval"/nspr.h
+      if test -f "$withval"/nspr.h
       then
         AC_MSG_RESULT([using $withval])
         NSPR_CFLAGS="-I$withval"
