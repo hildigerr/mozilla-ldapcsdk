@@ -1,0 +1,8 @@
+# Ignore Source Release Downloads
+pub_directory_c-sdk
+
+# Ignore CVS Stuff
+/CVS/*
+**/CVS/*
+.cvsignore
+*/.cvsignore
